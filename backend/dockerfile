@@ -1,20 +1,41 @@
-# 1. Базовый образ
-FROM node:18
+# ==================
+# Builder Stage
+# ==================
+FROM node:18-alpine AS builder
 
-# 2. Рабочая директория внутри контейнера
 WORKDIR /app
 
-# 3. Копируем package.json
+# Копируем package files
 COPY package*.json ./
 
-# 4. Устанавливаем зависимости
-RUN npm install
+# Устанавливаем зависимости (including devDependencies для build)
+RUN npm ci --only=production
 
-# 5. Копируем весь проект
+# ==================
+# Runtime Stage
+# ==================
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Метаданные сборки
+LABEL description="Card Collection Backend API" \
+      version="1.0" \
+      maintainer="Card Collection Team"
+
+# Копируем node_modules из builder stage
+COPY --from=builder /app/node_modules ./node_modules
+
+# Копируем исходный код (без node_modules)
 COPY . .
 
-# 6. Указываем порт
-EXPOSE 3000
+# Не устанавливаем PORT в образе - передаётся через env variables при запуске
+# Не устанавливаем среду окружения в образе
 
-# 7. Команда запуска
-CMD ["npm", "run", "dev"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 3000), (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+
+# Запускаем в production режиме (без nodemon)
+# Переменные окружения должны быть переданы при запуске контейнера
+CMD ["npm", "start"]
