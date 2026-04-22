@@ -3,6 +3,8 @@ version: "3.9"
 services:
   backend:
     build: ./backend
+    deploy:
+      replicas: 3
     ports:
       - "8080:3000"
     environment:

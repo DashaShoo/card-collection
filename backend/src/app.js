@@ -37,3 +37,5 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`  POST   /cards`);
   console.log(`  GET    /`);
 });
+
+console.log("App version:", process.env.APP_VERSION || "dev");
