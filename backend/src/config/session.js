@@ -2,6 +2,7 @@ const session = require("express-session");
 const RedisStore = require("connect-redis").default;
 const { createClient } = require("redis");
 const config = require("./config");
+const logger = require("./logger");
 
 // Инициализируем Redis клиент с правильным синтаксисом для redis v4+
 const redisClient = createClient({
@@ -10,7 +11,11 @@ const redisClient = createClient({
     port: parseInt(config.redis.port) || 6379,
     reconnectStrategy: (retries) => {
       if (retries > 10) {
-        console.error("Redis reconnection failed after 10 retries");
+        logger.error({
+          event: "redis_reconnection_failed",
+          message: "Redis reconnection failed after 10 retries",
+          retries,
+        });
         return new Error("Redis max retries exceeded");
       }
       return Math.min(retries * 100, 3000);
@@ -20,16 +25,52 @@ const redisClient = createClient({
 });
 
 // Обработчик ошибок Redis
-redisClient.on("error", (err) => console.error("Redis error:", err));
-redisClient.on("connect", () => console.log("Redis connected successfully"));
-redisClient.on("ready", () => console.log("Redis client ready"));
-redisClient.on("reconnecting", () => console.log("Redis reconnecting..."));
+redisClient.on("error", (err) =>
+  logger.error({
+    event: "redis_error",
+    error: err.message,
+  }),
+);
+
+redisClient.on("connect", () =>
+  logger.info({
+    event: "redis_connected",
+    message: "Redis connected successfully",
+    host: config.redis.host,
+    port: config.redis.port,
+  }),
+);
+
+redisClient.on("ready", () =>
+  logger.info({
+    event: "redis_ready",
+    message: "Redis client ready",
+  }),
+);
+
+redisClient.on("reconnecting", () =>
+  logger.warn({
+    event: "redis_reconnecting",
+    message: "Redis reconnecting...",
+  }),
+);
 
 // Подключаемся к Redis (асинхронно, но не ждём явно)
 redisClient
   .connect()
-  .then(() => console.log("Redis connection established"))
-  .catch((err) => console.error("Failed to connect to Redis:", err));
+  .then(() =>
+    logger.info({
+      event: "redis_connection_established",
+      message: "Redis connection established",
+    }),
+  )
+  .catch((err) =>
+    logger.error({
+      event: "redis_connection_error",
+      error: err.message,
+      stack: err.stack,
+    }),
+  );
 
 // Создаём Redis Store для session
 const redisStore = new RedisStore({
