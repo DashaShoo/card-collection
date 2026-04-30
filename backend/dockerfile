@@ -5,14 +5,14 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# Копируем package files
+# Копируем package files - этот слой кешируется если package.json не меняется
 COPY package*.json ./
 
-# Устанавливаем зависимости (including devDependencies для build)
-RUN npm ci --only=production
+# Устанавливаем зависимости (only production)
+RUN npm ci --only=production && npm cache clean --force
 
 # ==================
-# Runtime Stage
+# Runtime Stage (lightweight)
 # ==================
 FROM node:18-alpine
 
@@ -21,21 +21,24 @@ WORKDIR /app
 # Метаданные сборки
 LABEL description="Card Collection Backend API" \
       version="1.0" \
-      maintainer="Card Collection Team"
+      maintainer="Card Collection Team" \
+      environment="production"
 
-# Копируем node_modules из builder stage
+# Установка dumb-init для правильной обработки сигналов в контейнере
+RUN apk add --no-cache dumb-init
+
+# Копируем node_modules из builder stage (не переинсталлируем)
 COPY --from=builder /app/node_modules ./node_modules
 
 # Копируем исходный код (без node_modules)
 COPY . .
 
-# Не устанавливаем PORT в образе - передаётся через env variables при запуске
-# Не устанавливаем среду окружения в образе
+# Используем dumb-init как entrypoint для правильной передачи сигналов
+ENTRYPOINT ["dumb-init", "--"]
 
-# Health check
+# Health check с более коротким start period для быстрого старта
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 3000), (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
-# Запускаем в production режиме (без nodemon)
-# Переменные окружения должны быть переданы при запуске контейнера
+# Запускаем приложение
 CMD ["npm", "start"]

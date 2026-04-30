@@ -165,13 +165,32 @@ app.get("/", (req, res) => {
   });
 });
 
+// Middleware для проверки shutdown state
+let isShuttingDown = false;
+
+app.use((req, res, next) => {
+  if (isShuttingDown) {
+    logger.warn({
+      requestId: req.id,
+      event: "request_rejected_shutting_down",
+      message: "Server is shutting down, rejecting new requests",
+    });
+    res.status(503).json({
+      error: "Service Unavailable",
+      message: "Server is shutting down",
+    });
+    return;
+  }
+  next();
+});
+
 app.use((req, res) => {
   res.status(404).json({ error: `Cannot ${req.method} ${req.path}` });
 });
 
 // Запуск сервера
 const PORT = config.port;
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   logger.info({
     event: "server_started",
     port: PORT,
@@ -187,9 +206,103 @@ app.listen(PORT, "0.0.0.0", () => {
       "GET    /status",
       "GET    /",
     ],
+    pid: process.pid,
+  });
+});
+
+// Graceful shutdown: обработка SIGTERM и SIGINT
+const gracefulShutdown = (signal) => {
+  logger.info({
+    event: "shutdown_signal_received",
+    signal,
+    pid: process.pid,
+    uptime: process.uptime(),
+  });
+
+  isShuttingDown = true;
+
+  // Закрываем сервер и даём время завершиться текущим запросам
+  const shutdownTimeout = 30000; // 30 секунд
+  const shutdownTimer = setTimeout(() => {
+    logger.error({
+      event: "shutdown_timeout_exceeded",
+      message: "Forcing shutdown after timeout",
+      timeout_ms: shutdownTimeout,
+    });
+    process.exit(1);
+  }, shutdownTimeout);
+
+  server.close(() => {
+    logger.info({
+      event: "server_closed",
+      message: "HTTP server closed, all requests completed",
+    });
+
+    clearTimeout(shutdownTimer);
+
+    // Закрываем соединения с БД и Redis
+    const pool = require("./config/db");
+    const { redisClient } = require("./config/session");
+
+    Promise.all([
+      pool.end().catch((err) => {
+        logger.error({
+          event: "database_connection_close_error",
+          error: err.message,
+        });
+      }),
+      redisClient.quit().catch((err) => {
+        logger.error({
+          event: "redis_connection_close_error",
+          error: err.message,
+        });
+      }),
+    ])
+      .then(() => {
+        logger.info({
+          event: "graceful_shutdown_completed",
+          message: "All connections closed successfully",
+        });
+        process.exit(0);
+      })
+      .catch((err) => {
+        logger.error({
+          event: "graceful_shutdown_error",
+          error: err.message,
+        });
+        process.exit(1);
+      });
+  });
+
+  // Если сервер не закрывается с новыми соединениями, форсируем закрытие
+  server.on("error", (err) => {
+    logger.error({
+      event: "server_error_during_shutdown",
+      error: err.message,
+    });
+    process.exit(1);
+  });
+};
+
+// Слушаем сигналы завершения
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+// Логируем необработанные ошибки и promise rejections
+process.on("uncaughtException", (err) => {
+  logger.fatal({
+    event: "uncaught_exception",
+    error: err.message,
+    stack: err.stack,
+  });
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error({
+    event: "unhandled_rejection",
+    reason: reason instanceof Error ? reason.message : String(reason),
   });
 });
 
 module.exports = app;
-
-console.log("App version:", process.env.APP_VERSION || "dev");
