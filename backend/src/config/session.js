@@ -4,7 +4,7 @@ const { createClient } = require("redis");
 const config = require("./config");
 const logger = require("./logger");
 
-// Инициализируем Redis клиент с правильным синтаксисом для redis v4+
+// Создаём Redis клиент
 const redisClient = createClient({
   socket: {
     host: config.redis.host,
@@ -24,7 +24,7 @@ const redisClient = createClient({
   password: config.redis.password || undefined,
 });
 
-// Обработчик ошибок Redis
+// Обработчики событий
 redisClient.on("error", (err) =>
   logger.error({
     event: "redis_error",
@@ -55,28 +55,28 @@ redisClient.on("reconnecting", () =>
   }),
 );
 
-// Подключаемся к Redis (асинхронно, но не ждём явно)
-// redisClient
-//   .connect()
-//   .then(() =>
-//     logger.info({
-//       event: "redis_connection_established",
-//       message: "Redis connection established",
-//     }),
-//   )
-//   .catch((err) =>
-//     logger.error({
-//       event: "redis_connection_error",
-//       error: err.message,
-//       stack: err.stack,
-//     }),
-//   );
+// Явно подключаемся к Redis (ЭТО ВАЖНО!)
+redisClient
+  .connect()
+  .then(() =>
+    logger.info({
+      event: "redis_connection_established",
+      message: "Redis connection established",
+    }),
+  )
+  .catch((err) =>
+    logger.error({
+      event: "redis_connection_error",
+      error: err.message,
+      stack: err.stack,
+    }),
+  );
 
-// Создаём Redis Store для session
+// Создаём Redis Store для session (после вызова connect)
 const redisStore = new RedisStore({
   client: redisClient,
   prefix: "session:",
-  ttl: config.sessionTTL || 24 * 60 * 60, // 24 часа по умолчанию
+  ttl: config.sessionTTL || 24 * 60 * 60,
 });
 
 // Конфигурация session middleware
@@ -86,12 +86,12 @@ const sessionMiddleware = session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: config.environment === "production", // HTTPS only в production
+    secure: config.environment === "production",
     httpOnly: true,
-    maxAge: (config.sessionTTL || 24 * 60 * 60) * 1000, // ms
+    maxAge: (config.sessionTTL || 24 * 60 * 60) * 1000,
     sameSite: "lax",
   },
-  name: "sessionId", // Имя cookie
+  name: "sessionId",
 });
 
 module.exports = {
