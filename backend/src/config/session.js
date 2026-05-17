@@ -81,7 +81,6 @@ const redisStore = new RedisStore({
 
 // Конфигурация session middleware
 const sessionMiddleware = session({
-  store: redisStore,
   secret: config.jwtSecret,
   resave: false,
   saveUninitialized: false,
