@@ -56,21 +56,21 @@ redisClient.on("reconnecting", () =>
 );
 
 // Подключаемся к Redis (асинхронно, но не ждём явно)
-redisClient
-  .connect()
-  .then(() =>
-    logger.info({
-      event: "redis_connection_established",
-      message: "Redis connection established",
-    }),
-  )
-  .catch((err) =>
-    logger.error({
-      event: "redis_connection_error",
-      error: err.message,
-      stack: err.stack,
-    }),
-  );
+// redisClient
+//   .connect()
+//   .then(() =>
+//     logger.info({
+//       event: "redis_connection_established",
+//       message: "Redis connection established",
+//     }),
+//   )
+//   .catch((err) =>
+//     logger.error({
+//       event: "redis_connection_error",
+//       error: err.message,
+//       stack: err.stack,
+//     }),
+//   );
 
 // Создаём Redis Store для session
 const redisStore = new RedisStore({
